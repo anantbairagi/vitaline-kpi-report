@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.cursor/
+.vscode/
+
+# Fly.io (not needed for Streamlit Cloud)
+Dockerfile
+fly.toml
+.dockerignore
+
+# Large / non-essential directories
+platform/
+dehydration_report/
+archive/
+notebooks/
+agent-transcripts/
+
+# Reports (except the KPI report we need)
+reports/*.pdf
+
+# Sensitive
+.env
+*.credentials
