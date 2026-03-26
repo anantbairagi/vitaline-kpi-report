@@ -27,7 +27,7 @@ st.set_page_config(
 
 # ── Data Loading ─────────────────────────────────────────────────────────────
 
-@st.cache_data
+@st.cache_data(ttl=300)
 def load_excel():
     sheets = {}
     for name, key in [
