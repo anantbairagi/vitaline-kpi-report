@@ -222,8 +222,16 @@ def step2_longstay(mds, eligible_df, target_period_end):
 # ── Step 3–4: KPI 1 & KPI 2 ─────────────────────────────────────────────────
 
 def _assess_quality_measure(patient_mds, window_start, window_end, item_col,
-                            numerator_values, episode_start=None):
-    """Evaluate a CMS-style quality measure for one patient in a window.
+                            numerator_values, episode_start=None,
+                            cms_lookback=False):
+    """Evaluate a CMS-style quality measure for one patient.
+
+    When cms_lookback=False (monthly snapshot): only uses assessments with ARD
+    in [window_start, window_end].
+
+    When cms_lookback=True (CMS mirror): finds the target assessment (latest
+    qualifying assessment in the window), then scans back 275 days from that
+    target per CMS QM User's Manual v12.1 Section 4 Long-Stay Record Defs.
 
     Returns dict with assessment details and flags.
     """
@@ -242,9 +250,28 @@ def _assess_quality_measure(patient_mds, window_start, window_end, item_col,
 
     if in_window.empty:
         return {"has_assessment": False, "excluded": False, "in_numerator": False,
-                "n_assessments": 0, "item_values": "", "reason": "No qualifying assessment"}
+                "n_assessments": 0, "item_values": "",
+                "reason": "No qualifying assessment in target period"}
 
-    values = in_window[item_col].tolist()
+    if cms_lookback:
+        target_ard = in_window["assessment_reference_date"].max()
+        lookback_floor = target_ard - timedelta(days=275)
+        if episode_start is not None and pd.notna(episode_start):
+            lookback_floor = max(lookback_floor, pd.Timestamp(episode_start))
+
+        scan = qualifying[
+            (qualifying["assessment_reference_date"] <= target_ard)
+            & (qualifying["assessment_reference_date"] >= lookback_floor)
+        ]
+    else:
+        scan = in_window
+
+    if scan.empty:
+        return {"has_assessment": True, "excluded": True, "in_numerator": False,
+                "n_assessments": 0, "item_values": "",
+                "reason": "No assessments in scan window"}
+
+    values = scan[item_col].tolist()
     coded = [v for v in values if pd.notna(v) and v not in ("-", "")]
     excluded = len(coded) == 0
 
@@ -254,7 +281,7 @@ def _assess_quality_measure(patient_mds, window_start, window_end, item_col,
         "has_assessment": True,
         "excluded": excluded,
         "in_numerator": in_num,
-        "n_assessments": len(in_window),
+        "n_assessments": len(scan),
         "item_values": ", ".join(str(v) for v in values),
         "reason": "",
     }
@@ -287,9 +314,11 @@ def step3_kpi1(mds, eligible_df, longstay_df, report_start, report_end, quarterl
         pm = mds[(mds["surrogate_patient_id"] == pid) & (mds["surrogate_facility_id"] == fid)]
 
         m = _assess_quality_measure(pm, report_start, report_end,
-                                    "j1900c_major_injury", ("1", "2"), ep_start)
+                                    "j1900c_major_injury", ("1", "2"), ep_start,
+                                    cms_lookback=False)
         q = _assess_quality_measure(pm, quarterly_start, report_end,
-                                    "j1900c_major_injury", ("1", "2"), ep_start)
+                                    "j1900c_major_injury", ("1", "2"), ep_start,
+                                    cms_lookback=True)
 
         rows.append({
             "surrogate_patient_id": pid, "surrogate_facility_id": fid,
@@ -336,9 +365,11 @@ def step4_kpi2(mds, eligible_df, longstay_df, report_start, report_end, quarterl
         pm = mds[(mds["surrogate_patient_id"] == pid) & (mds["surrogate_facility_id"] == fid)]
 
         m = _assess_quality_measure(pm, report_start, report_end,
-                                    "j1800_any_fall", ("1",), ep_start)
+                                    "j1800_any_fall", ("1",), ep_start,
+                                    cms_lookback=False)
         q = _assess_quality_measure(pm, quarterly_start, report_end,
-                                    "j1800_any_fall", ("1",), ep_start)
+                                    "j1800_any_fall", ("1",), ep_start,
+                                    cms_lookback=True)
 
         rows.append({
             "surrogate_patient_id": pid, "surrogate_facility_id": fid,
