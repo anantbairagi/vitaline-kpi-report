@@ -223,7 +223,7 @@ st.header("3. Determining Long-Stay Residents")
 st.markdown(
     "The CMS quality measures for falls (KPIs 1 & 2) apply only to **long-stay** residents. "
     "We follow the exact CMS definition from the "
-    "*MDS 3.0 Quality Measures User's Manual (v12.1)*:"
+    "*MDS 3.0 Quality Measures User's Manual V17 (January 2025)*:"
 )
 
 st.info(
@@ -236,8 +236,9 @@ st.info(
     "- If a patient is discharged with **return anticipated** and re-enters within "
     "**30 days**, it's a **reentry** within the same episode. Otherwise, it starts a new one.\n"
     "- **CDIF** = total in-facility days across all stays in the latest episode. "
-    "Days spent outside (e.g., hospitalized) do **not** count.\n\n"
-    "*Source: CMS QM User's Manual v12.1, Chapter 1 Sections 1-2, Appendix C*"
+    "Days spent outside (e.g., hospitalized) do **not** count.\n"
+    "- Admission vs reentry is determined by **A1700** on the entry record.\n\n"
+    "*Source: CMS QM User's Manual V17, Chapter 1 Sections 1-2, Chapter 4*"
 )
 
 ls_df = data["longstay"]
@@ -273,57 +274,60 @@ st.markdown("---")
 st.header("4. KPI 1 — Falls with Major Injury")
 
 st.markdown(
-    "This KPI mirrors the CMS quality measure **N013.01** (*\"Percent of Residents "
+    "This KPI mirrors the CMS quality measure **N013.02** (*\"Percent of Residents "
     "Experiencing One or More Falls with Major Injury — Long Stay\"*). "
     "It answers: **among our long-stay Vitaline patients, what percentage experienced "
     "a fall with major injury?**"
 )
 
 st.info(
-    "**How it's calculated**\n\n"
-    "- **Population**: Long-stay eligible Vitaline patients (from Step 3).\n"
-    "- **Assessment window**: MDS assessments completed in January 2026.\n"
-    "- **Denominator**: Patients who have at least one assessment where "
-    "\"falls with major injury\" (J1900C) was evaluated — meaning the assessor "
-    "recorded whether the patient had a major-injury fall or not.\n"
-    "- **Numerator**: Among those, patients where the assessment indicates "
-    "one or more falls with major injury.\n"
-    "- **Rate** = Numerator / Denominator"
+    "**How it's calculated (exact CMS methodology)**\n\n"
+    "1. **Find the target assessment**: the patient's most recent qualifying assessment "
+    "within their current episode, no more than 120 days before the episode end.\n"
+    "2. **Look-back scan**: from the target assessment, scan all qualifying assessments "
+    "going back up to **275 days** within the same episode. This covers approximately "
+    "1 year of fall history (3 quarterly assessments x ~93 days each).\n"
+    "3. **Qualifying assessments**: OBRA assessments (A0310A = 01-06), PPS 5-day "
+    "(A0310B = 01), or discharge assessments (A0310F = 10, 11).\n"
+    "4. **Denominator**: patients with at least one scan assessment where J1900C is coded.\n"
+    "5. **Numerator**: patients where **J1900C = 1 or 2** on any scan assessment.\n\n"
+    "*Source: CMS QM User's Manual V17, Table 2-12, Chapter 1 Section 4*"
 )
 
 k1 = data["kpi1"]
 k1_ls = k1[k1["is_long_stay"] == True]
-k1_denom = int(((k1_ls["monthly_has_assessment"] == True)
-                 & (k1_ls["monthly_excluded"] == False)).sum())
-k1_num = int((k1_ls["monthly_in_numerator"] == True).sum())
+k1_denom = int(((k1_ls["has_assessment"] == True)
+                 & (k1_ls["excluded"] == False)).sum())
+k1_num = int((k1_ls["in_numerator"] == True).sum())
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     card("Long-Stay Patients", str(n_longstay),
          f"Out of {n_eligible} eligible Vitaline patients, "
-         f"{n_longstay} are long-stay residents.")
+         f"{n_longstay} are long-stay residents (CDIF >= 101 days).")
 with c2:
-    card("Assessed for Falls", str(k1_denom),
-         f"Of {n_longstay} long-stay patients, {k1_denom} had an MDS assessment "
-         f"in January where falls with major injury was evaluated.")
+    card("In Denominator", str(k1_denom),
+         f"Of {n_longstay} long-stay patients, {k1_denom} had qualifying "
+         f"assessments where falls with major injury (J1900C) was coded. "
+         f"The look-back scan covers up to 275 days of assessments.")
 with c3:
     card("Had Major-Injury Fall", str(k1_num),
-         f"Of those {k1_denom} assessed patients, {k1_num} experienced at least "
-         f"one fall resulting in major injury.")
+         f"Of those {k1_denom} assessed patients, {k1_num} had at least one "
+         f"assessment reporting a fall with major injury (J1900C = 1 or 2).")
 with c4:
     card("Fall with Major Injury Rate", pct(k1_num, k1_denom),
          f"This means {pct(k1_num, k1_denom)} of assessed long-stay "
-         f"Vitaline patients had a major-injury fall in January."
+         f"Vitaline patients experienced a major-injury fall."
          if k1_denom > 0 else "No patients had assessments with J1900C coded.")
 
 with st.expander("View KPI 1 patient-level detail"):
-    st.dataframe(k1_ls[k1_ls["monthly_has_assessment"] == True].rename(columns={
-        "surrogate_patient_id": "Patient ID", "surrogate_facility_id": "Facility",
-        "monthly_n_assessments": "# Assessments", "monthly_item_values": "J1900C Values",
-        "monthly_excluded": "Excluded (not coded)", "monthly_in_numerator": "Had Major-Injury Fall",
-    })[["Patient ID", "Facility", "# Assessments", "J1900C Values",
-        "Excluded (not coded)", "Had Major-Injury Fall"]],
-       use_container_width=True, hide_index=True)
+    disp = k1_ls[k1_ls["has_assessment"] == True].copy()
+    disp_cols = {"surrogate_patient_id": "Patient ID", "surrogate_facility_id": "Facility",
+                 "n_assessments": "Assessments Scanned", "item_values": "J1900C Values",
+                 "excluded": "Excluded (not coded)", "in_numerator": "Had Major-Injury Fall",
+                 "scan_detail": "Scan Window"}
+    st.dataframe(disp.rename(columns=disp_cols)[list(disp_cols.values())],
+                 use_container_width=True, hide_index=True)
 
 st.markdown("---")
 
@@ -332,26 +336,27 @@ st.markdown("---")
 st.header("5. KPI 2 — Prevalence of Falls")
 
 st.markdown(
-    "This KPI mirrors the CMS quality measure **N032.01** (*\"Prevalence of Falls — "
+    "This KPI mirrors the CMS quality measure **N032.02** (*\"Prevalence of Falls — "
     "Long Stay\"*). It answers: **what percentage of long-stay Vitaline patients "
     "had any fall at all?**"
 )
 
 st.info(
-    "**How it's calculated**\n\n"
-    "- Same population as KPI 1 (long-stay eligible Vitaline patients).\n"
-    "- **Denominator**: Patients who have at least one MDS assessment in January "
-    "where \"any fall since prior assessment\" (J1800) was evaluated.\n"
-    "- **Numerator**: Among those, patients whose assessment indicates they "
-    "had a fall (J1800 = Yes).\n"
-    "- **Rate** = Numerator / Denominator"
+    "**How it's calculated (exact CMS methodology)**\n\n"
+    "- Same population and look-back scan as KPI 1.\n"
+    "- **Denominator**: Patients with at least one scan assessment where **J1800** "
+    "(any fall since prior assessment) is coded.\n"
+    "- **Numerator**: Patients where **J1800 = 1** (yes, had a fall) on at least "
+    "one assessment in the scan.\n"
+    "- **Rate** = Numerator / Denominator\n\n"
+    "*Source: CMS QM User's Manual V17, Table 2-32*"
 )
 
 k2 = data["kpi2"]
 k2_ls = k2[k2["is_long_stay"] == True]
-k2_denom = int(((k2_ls["monthly_has_assessment"] == True)
-                 & (k2_ls["monthly_excluded"] == False)).sum())
-k2_num = int((k2_ls["monthly_in_numerator"] == True).sum())
+k2_denom = int(((k2_ls["has_assessment"] == True)
+                 & (k2_ls["excluded"] == False)).sum())
+k2_num = int((k2_ls["in_numerator"] == True).sum())
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
@@ -359,27 +364,28 @@ with c1:
          f"Out of {n_eligible} eligible Vitaline patients who received 3+ months "
          f"of treatment, {n_longstay} are long-term residents.")
 with c2:
-    card("Assessed for Falls", str(k2_denom),
-         f"Of {n_longstay} long-stay patients, {k2_denom} had an MDS assessment "
-         f"in January where falls were evaluated by the assessor.")
+    card("In Denominator", str(k2_denom),
+         f"Of {n_longstay} long-stay patients, {k2_denom} had qualifying "
+         f"assessments where falls (J1800) were coded during the 275-day "
+         f"look-back scan.")
 with c3:
     card("Had a Fall", str(k2_num),
-         f"Of those {k2_denom} assessed patients, {k2_num} experienced at least "
-         f"one fall since their prior assessment.")
+         f"Of those {k2_denom} assessed patients, {k2_num} had at least one "
+         f"assessment reporting a fall (J1800 = 1).")
 with c4:
     card("Fall Prevalence Rate", pct(k2_num, k2_denom),
-         f"This means about 1 in {k2_denom // k2_num if k2_num > 0 else '?'} "
-         f"assessed long-stay Vitaline patients experienced a fall in January."
-         if k2_num > 0 else "No falls recorded among assessed patients.")
+         f"This means {pct(k2_num, k2_denom)} of assessed long-stay "
+         f"Vitaline patients had a fall reported in their look-back period."
+         if k2_denom > 0 else "No patients had assessments with J1800 coded.")
 
 with st.expander("View KPI 2 patient-level detail"):
-    st.dataframe(k2_ls[k2_ls["monthly_has_assessment"] == True].rename(columns={
-        "surrogate_patient_id": "Patient ID", "surrogate_facility_id": "Facility",
-        "monthly_n_assessments": "# Assessments", "monthly_item_values": "J1800 Values",
-        "monthly_excluded": "Excluded (not coded)", "monthly_in_numerator": "Had a Fall",
-    })[["Patient ID", "Facility", "# Assessments", "J1800 Values",
-        "Excluded (not coded)", "Had a Fall"]],
-       use_container_width=True, hide_index=True)
+    disp2 = k2_ls[k2_ls["has_assessment"] == True].copy()
+    disp2_cols = {"surrogate_patient_id": "Patient ID", "surrogate_facility_id": "Facility",
+                  "n_assessments": "Assessments Scanned", "item_values": "J1800 Values",
+                  "excluded": "Excluded (not coded)", "in_numerator": "Had a Fall",
+                  "scan_detail": "Scan Window"}
+    st.dataframe(disp2.rename(columns=disp2_cols)[list(disp2_cols.values())],
+                 use_container_width=True, hide_index=True)
 
 st.markdown("---")
 
@@ -604,12 +610,12 @@ display_cols = {
     "Company": "Company",
     "Eligible Patients": "Eligible Patients",
     "Long-Stay Patients": "Long-Stay Patients",
-    "KPI1 Monthly Denom": "Falls Major Injury — Assessed",
-    "KPI1 Monthly Num": "Falls Major Injury — Had Fall",
-    "KPI1 Monthly Rate": "Falls Major Injury — Rate",
-    "KPI2 Monthly Denom": "Any Fall — Assessed",
-    "KPI2 Monthly Num": "Any Fall — Had Fall",
-    "KPI2 Monthly Rate": "Any Fall — Rate",
+    "KPI1 Denom": "Falls Major Injury — Assessed",
+    "KPI1 Num": "Falls Major Injury — Had Fall",
+    "KPI1 Rate": "Falls Major Injury — Rate",
+    "KPI2 Denom": "Any Fall — Assessed",
+    "KPI2 Num": "Any Fall — Had Fall",
+    "KPI2 Rate": "Any Fall — Rate",
     "KPI3-A Pre %": "Falls Pre-Vitaline %",
     "KPI3-A Post %": "Falls Post-Vitaline %",
     "KPI4-A Pre %": "Hosp Pre-Vitaline %",
@@ -649,7 +655,7 @@ with tab1:
     st.caption("Percentage of assessed long-stay patients who had a fall. "
                "Facilities with no assessed patients are omitted.")
     facility_distribution_chart(
-        fac, "KPI2 Monthly Rate",
+        fac, "KPI2 Rate",
         "Fall Prevalence Rate by Facility (January 2026)",
         color="#dc3545",
     )
@@ -744,8 +750,8 @@ st.markdown(
     "<p style='text-align:center;color:#868e96;padding:20px;font-size:0.85rem;'>"
     "<strong>Data Sources</strong>: MDS 3.0 assessments (188,250 records) &bull; "
     "Vitaline booking log (30,550 records) &bull; 41 facilities<br>"
-    "<strong>Methodology</strong>: CMS MDS 3.0 Quality Measures User's Manual v12.1 "
-    "(RTI International, October 2019)<br>"
+    "<strong>Methodology</strong>: CMS MDS 3.0 Quality Measures User's Manual V17 "
+    "(Effective January 1, 2025)<br>"
     "<strong>Note</strong>: All data is de-identified. No Protected Health Information "
     "(PHI) is stored or displayed.<br>"
     "Generated March 2026</p>",

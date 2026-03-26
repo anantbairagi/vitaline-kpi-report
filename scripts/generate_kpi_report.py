@@ -349,8 +349,8 @@ def _empty_result(reason):
     }
 
 
-def step3_kpi1(mds, eligible_df, longstay_df, report_start, report_end, quarterly_start):
-    """KPI 1: Falls with Major Injury — monthly and CMS quarterly."""
+def step3_kpi1(mds, eligible_df, longstay_df):
+    """KPI 1: Falls with Major Injury — CMS N013.02 exact mirror."""
     ls = longstay_df[longstay_df["is_long_stay"]]
     ls_pids = set(ls["surrogate_patient_id"])
 
@@ -364,11 +364,9 @@ def step3_kpi1(mds, eligible_df, longstay_df, report_start, report_end, quarterl
             rows.append({
                 "surrogate_patient_id": pid, "surrogate_facility_id": fid,
                 "is_long_stay": False,
-                "monthly_has_assessment": None, "monthly_excluded": None,
-                "monthly_in_numerator": None, "monthly_item_values": "",
-                "quarterly_has_assessment": None, "quarterly_excluded": None,
-                "quarterly_in_numerator": None, "quarterly_item_values": "",
-                "quarterly_scan_detail": "",
+                "has_assessment": None, "excluded": None,
+                "in_numerator": None, "n_assessments": 0,
+                "item_values": "", "scan_detail": "",
             })
             continue
 
@@ -377,34 +375,20 @@ def step3_kpi1(mds, eligible_df, longstay_df, report_start, report_end, quarterl
         ep_end = pd.Timestamp(ep_row["episode_end"]) if ep_row["episode_end"] else None
         pm = mds[(mds["surrogate_patient_id"] == pid) & (mds["surrogate_facility_id"] == fid)]
 
-        m = _assess_quality_measure(pm, "j1900c_major_injury", ("1", "2"),
-                                    episode_start=ep_start, cms_lookback=False,
-                                    window_start=report_start, window_end=report_end)
-        q = _assess_quality_measure(pm, "j1900c_major_injury", ("1", "2"),
+        r = _assess_quality_measure(pm, "j1900c_major_injury", ("1", "2"),
                                     episode_start=ep_start, episode_end=ep_end,
                                     cms_lookback=True)
 
         rows.append({
             "surrogate_patient_id": pid, "surrogate_facility_id": fid,
-            "is_long_stay": True,
-            "monthly_has_assessment": m["has_assessment"],
-            "monthly_excluded": m["excluded"],
-            "monthly_in_numerator": m["in_numerator"],
-            "monthly_n_assessments": m["n_assessments"],
-            "monthly_item_values": m["item_values"],
-            "quarterly_has_assessment": q["has_assessment"],
-            "quarterly_excluded": q["excluded"],
-            "quarterly_in_numerator": q["in_numerator"],
-            "quarterly_n_assessments": q["n_assessments"],
-            "quarterly_item_values": q["item_values"],
-            "quarterly_scan_detail": q["scan_detail"],
+            "is_long_stay": True, **r,
         })
 
     return pd.DataFrame(rows)
 
 
-def step4_kpi2(mds, eligible_df, longstay_df, report_start, report_end, quarterly_start):
-    """KPI 2: Prevalence of Falls — monthly and CMS quarterly."""
+def step4_kpi2(mds, eligible_df, longstay_df):
+    """KPI 2: Prevalence of Falls — CMS N032.02 exact mirror."""
     ls = longstay_df[longstay_df["is_long_stay"]]
     ls_pids = set(ls["surrogate_patient_id"])
 
@@ -418,11 +402,9 @@ def step4_kpi2(mds, eligible_df, longstay_df, report_start, report_end, quarterl
             rows.append({
                 "surrogate_patient_id": pid, "surrogate_facility_id": fid,
                 "is_long_stay": False,
-                "monthly_has_assessment": None, "monthly_excluded": None,
-                "monthly_in_numerator": None, "monthly_item_values": "",
-                "quarterly_has_assessment": None, "quarterly_excluded": None,
-                "quarterly_in_numerator": None, "quarterly_item_values": "",
-                "quarterly_scan_detail": "",
+                "has_assessment": None, "excluded": None,
+                "in_numerator": None, "n_assessments": 0,
+                "item_values": "", "scan_detail": "",
             })
             continue
 
@@ -431,27 +413,13 @@ def step4_kpi2(mds, eligible_df, longstay_df, report_start, report_end, quarterl
         ep_end = pd.Timestamp(ep_row["episode_end"]) if ep_row["episode_end"] else None
         pm = mds[(mds["surrogate_patient_id"] == pid) & (mds["surrogate_facility_id"] == fid)]
 
-        m = _assess_quality_measure(pm, "j1800_any_fall", ("1",),
-                                    episode_start=ep_start, cms_lookback=False,
-                                    window_start=report_start, window_end=report_end)
-        q = _assess_quality_measure(pm, "j1800_any_fall", ("1",),
+        r = _assess_quality_measure(pm, "j1800_any_fall", ("1",),
                                     episode_start=ep_start, episode_end=ep_end,
                                     cms_lookback=True)
 
         rows.append({
             "surrogate_patient_id": pid, "surrogate_facility_id": fid,
-            "is_long_stay": True,
-            "monthly_has_assessment": m["has_assessment"],
-            "monthly_excluded": m["excluded"],
-            "monthly_in_numerator": m["in_numerator"],
-            "monthly_n_assessments": m["n_assessments"],
-            "monthly_item_values": m["item_values"],
-            "quarterly_has_assessment": q["has_assessment"],
-            "quarterly_excluded": q["excluded"],
-            "quarterly_in_numerator": q["in_numerator"],
-            "quarterly_n_assessments": q["n_assessments"],
-            "quarterly_item_values": q["item_values"],
-            "quarterly_scan_detail": q["scan_detail"],
+            "is_long_stay": True, **r,
         })
 
     return pd.DataFrame(rows)
@@ -659,19 +627,17 @@ def compute_summary(eligible_df, longstay_df, kpi1_df, kpi2_df, kpi3_df, kpi4_df
         n_eligible = len(e)
         n_longstay = int(ls["is_long_stay"].sum())
 
-        def _kpi_stats(kdf, prefix):
+        def _kpi_stats(kdf):
             kls = kdf[kdf["is_long_stay"] == True]
-            ha = kls[f"{prefix}_has_assessment"]
-            ex = kls[f"{prefix}_excluded"]
-            inn = kls[f"{prefix}_in_numerator"]
+            ha = kls["has_assessment"]
+            ex = kls["excluded"]
+            inn = kls["in_numerator"]
             d = int(((ha == True) & (ex == False)).sum())
             n = int((inn == True).sum())
             return d, n, _rate(n, d)
 
-        k1m_d, k1m_n, k1m_r = _kpi_stats(k1, "monthly")
-        k1q_d, k1q_n, k1q_r = _kpi_stats(k1, "quarterly")
-        k2m_d, k2m_n, k2m_r = _kpi_stats(k2, "monthly")
-        k2q_d, k2q_n, k2q_r = _kpi_stats(k2, "quarterly")
+        k1_d, k1_n, k1_r = _kpi_stats(k1)
+        k2_d, k2_n, k2_r = _kpi_stats(k2)
 
         n3 = len(k3)
         k3pa = int(k3["pre_any_fall"].sum()) if n3 else 0
@@ -688,10 +654,8 @@ def compute_summary(eligible_df, longstay_df, kpi1_df, kpi2_df, kpi3_df, kpi4_df
         summary_rows.append({
             "Facility": label, "Company": company,
             "Eligible Patients": n_eligible, "Long-Stay Patients": n_longstay,
-            "KPI1 Monthly Denom": k1m_d, "KPI1 Monthly Num": k1m_n, "KPI1 Monthly Rate": k1m_r,
-            "KPI1 Quarterly Denom": k1q_d, "KPI1 Quarterly Num": k1q_n, "KPI1 Quarterly Rate": k1q_r,
-            "KPI2 Monthly Denom": k2m_d, "KPI2 Monthly Num": k2m_n, "KPI2 Monthly Rate": k2m_r,
-            "KPI2 Quarterly Denom": k2q_d, "KPI2 Quarterly Num": k2q_n, "KPI2 Quarterly Rate": k2q_r,
+            "KPI1 Denom": k1_d, "KPI1 Num": k1_n, "KPI1 Rate": k1_r,
+            "KPI2 Denom": k2_d, "KPI2 Num": k2_n, "KPI2 Rate": k2_r,
             "KPI3 Eligible": n3,
             "KPI3-A Pre (>=1 fall)": k3pa, "KPI3-A Post (>=1 fall)": k3oa,
             "KPI3-A Pre %": _rate(k3pa, n3), "KPI3-A Post %": _rate(k3oa, n3),
@@ -855,11 +819,11 @@ def main():
     print()
 
     print("Step 3: KPI 1 -- Falls with Major Injury (N013.02)...")
-    kpi1_df = step3_kpi1(mds, eligible_df, longstay_df, report_start, report_end, quarterly_start)
+    kpi1_df = step3_kpi1(mds, eligible_df, longstay_df)
     print("  Done.")
 
     print("Step 4: KPI 2 -- Prevalence of Falls (N032.02)...")
-    kpi2_df = step4_kpi2(mds, eligible_df, longstay_df, report_start, report_end, quarterly_start)
+    kpi2_df = step4_kpi2(mds, eligible_df, longstay_df)
     print("  Done.")
 
     print("Step 5: KPI 3 -- Pre/Post 90-day Falls...")
@@ -885,17 +849,12 @@ def main():
     print()
     for label, prefix in [("KPI 1 (Falls Major Injury, N013.02)", "KPI1"),
                           ("KPI 2 (Prevalence of Falls, N032.02)", "KPI2")]:
-        mr = overall[f"{prefix} Monthly Rate"]
-        qr = overall[f"{prefix} Quarterly Rate"]
+        r = overall[f"{prefix} Rate"]
         print(f"  {label}:")
-        if mr is not None:
-            print(f"    Monthly:   {int(overall[f'{prefix} Monthly Num'])}/{int(overall[f'{prefix} Monthly Denom'])} = {mr:.1%}")
+        if r is not None:
+            print(f"    {int(overall[f'{prefix} Num'])}/{int(overall[f'{prefix} Denom'])} = {r:.1%}")
         else:
-            print(f"    Monthly:   N/A")
-        if qr is not None:
-            print(f"    CMS Quarterly (275d lookback): {int(overall[f'{prefix} Quarterly Num'])}/{int(overall[f'{prefix} Quarterly Denom'])} = {qr:.1%}")
-        else:
-            print(f"    CMS Quarterly: N/A")
+            print(f"    N/A")
     print()
     for label, prefix in [("KPI 3 (Pre/Post Falls)", "KPI3"), ("KPI 4 (Pre/Post Hosp)", "KPI4")]:
         pa = overall[f"{prefix}-A Pre %"]
