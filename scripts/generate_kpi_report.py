@@ -427,20 +427,20 @@ def step4_kpi2(mds, eligible_df, longstay_df):
 
 # ── Step 5: KPI 3 — Pre/Post Falls ──────────────────────────────────────────
 
-def _find_pre_90_window(clinic_dates_sorted):
-    """Find the most recent 90-day window without any Vitaline infusion."""
+def _find_pre_window(clinic_dates_sorted, window_days):
+    """Find the most recent N-day window without any Vitaline infusion."""
     if not clinic_dates_sorted:
         return None, None
 
     for i in range(len(clinic_dates_sorted) - 1, 0, -1):
         gap = (clinic_dates_sorted[i] - clinic_dates_sorted[i - 1]).days
-        if gap > 90:
+        if gap > window_days:
             pre_end = clinic_dates_sorted[i] - timedelta(days=1)
-            pre_start = clinic_dates_sorted[i] - timedelta(days=90)
+            pre_start = clinic_dates_sorted[i] - timedelta(days=window_days)
             return pre_start, pre_end
 
     pre_end = clinic_dates_sorted[0] - timedelta(days=1)
-    pre_start = clinic_dates_sorted[0] - timedelta(days=90)
+    pre_start = clinic_dates_sorted[0] - timedelta(days=window_days)
     return pre_start, pre_end
 
 
@@ -458,19 +458,64 @@ def _count_falls_in_window(patient_mds, window_start, window_end):
 
     count_1 = sum(1 for v in coded if v == "1")
     count_2 = sum(1 for v in coded if v == "2")
+    fall_assessments = count_1 + count_2
 
     return {
         "n_assessments": n_assess,
         "j1900c_values": ", ".join(str(v) for v in j1900c_vals) if j1900c_vals else "",
         "j1900c_eq1_count": count_1,
         "j1900c_eq2_count": count_2,
-        "has_any_fall": (count_1 + count_2) > 0,
+        "has_any_fall": fall_assessments > 0,
+        "has_2plus_falls": fall_assessments >= 2,
         "has_j1900c_2": count_2 > 0,
     }
 
 
-def step5_kpi3(mds, vitaline, eligible_df, post_start, post_end):
-    """KPI 3: Pre/Post 90-day falls comparison for all eligible patients."""
+def _build_prepost_falls(pid, fid, mds, clinic_dates, post_start, post_end, window_days):
+    """Compute pre/post fall metrics for a single patient at a given window size."""
+    pre_start, pre_end = _find_pre_window(clinic_dates, window_days)
+    pm = mds[(mds["surrogate_patient_id"] == pid) & (mds["surrogate_facility_id"] == fid)]
+
+    empty = {"n_assessments": 0, "j1900c_values": "", "j1900c_eq1_count": 0,
+             "j1900c_eq2_count": 0, "has_any_fall": False, "has_2plus_falls": False,
+             "has_j1900c_2": False}
+
+    post_end_adj = post_end
+    post_start_adj = post_end - timedelta(days=window_days - 1)
+
+    pre = _count_falls_in_window(pm, pd.Timestamp(pre_start), pd.Timestamp(pre_end)) \
+        if pre_start else empty
+    post = _count_falls_in_window(pm, post_start_adj, post_end_adj)
+
+    gap_source = "pre-first-visit"
+    if clinic_dates and len(clinic_dates) > 1:
+        for i in range(len(clinic_dates) - 1, 0, -1):
+            if (clinic_dates[i] - clinic_dates[i - 1]).days > window_days:
+                gap_source = f"gap between {clinic_dates[i-1]} and {clinic_dates[i]}"
+                break
+
+    pfx = f"_{window_days}d"
+    return {
+        f"pre_start{pfx}": str(pre_start) if pre_start else "",
+        f"pre_end{pfx}": str(pre_end) if pre_end else "",
+        f"post_start{pfx}": str(post_start_adj.date()),
+        f"post_end{pfx}": str(post_end_adj.date()),
+        f"pre_source{pfx}": gap_source,
+        f"pre_n{pfx}": pre["n_assessments"],
+        f"pre_vals{pfx}": pre["j1900c_values"],
+        f"pre_any_fall{pfx}": pre["has_any_fall"],
+        f"pre_2plus_falls{pfx}": pre["has_2plus_falls"],
+        f"pre_j1900c2{pfx}": pre["has_j1900c_2"],
+        f"post_n{pfx}": post["n_assessments"],
+        f"post_vals{pfx}": post["j1900c_values"],
+        f"post_any_fall{pfx}": post["has_any_fall"],
+        f"post_2plus_falls{pfx}": post["has_2plus_falls"],
+        f"post_j1900c2{pfx}": post["has_j1900c_2"],
+    }
+
+
+def step5_kpi3(mds, vitaline, eligible_df, post_end):
+    """KPI 3: Pre/Post falls comparison — 90-day and 120-day windows."""
     v_received = vitaline[vitaline["participation"] == "Received"]
 
     rows = []
@@ -482,44 +527,18 @@ def step5_kpi3(mds, vitaline, eligible_df, post_start, post_end):
             v_received[v_received["surrogate_patient_id"] == pid]["clinic_date"]
             .dropna().dt.date.tolist()
         )
-        pre_start, pre_end = _find_pre_90_window(clinic_dates)
 
-        pm = mds[(mds["surrogate_patient_id"] == pid) & (mds["surrogate_facility_id"] == fid)]
-
-        empty_pre = {"n_assessments": 0, "j1900c_values": "", "j1900c_eq1_count": 0,
-                     "j1900c_eq2_count": 0, "has_any_fall": False, "has_j1900c_2": False}
-        pre = _count_falls_in_window(pm, pd.Timestamp(pre_start), pd.Timestamp(pre_end)) \
-            if pre_start else empty_pre
-        post = _count_falls_in_window(pm, post_start, post_end)
-
-        gap_source = "pre-first-visit"
-        if clinic_dates and len(clinic_dates) > 1:
-            for i in range(len(clinic_dates) - 1, 0, -1):
-                if (clinic_dates[i] - clinic_dates[i - 1]).days > 90:
-                    gap_source = f"gap between {clinic_dates[i-1]} and {clinic_dates[i]}"
-                    break
-
-        rows.append({
-            "surrogate_patient_id": pid, "surrogate_facility_id": fid,
+        row = {
+            "surrogate_patient_id": pid,
+            "surrogate_facility_id": fid,
             "first_vitaline_date": str(clinic_dates[0]) if clinic_dates else "",
-            "pre_window_source": gap_source,
-            "pre_window_start": str(pre_start) if pre_start else "",
-            "pre_window_end": str(pre_end) if pre_end else "",
-            "post_window_start": str(post_start.date()),
-            "post_window_end": str(post_end.date()),
-            "pre_n_assessments": pre["n_assessments"],
-            "pre_j1900c_values": pre["j1900c_values"],
-            "pre_j1900c_eq1": pre["j1900c_eq1_count"],
-            "pre_j1900c_eq2": pre["j1900c_eq2_count"],
-            "pre_any_fall": pre["has_any_fall"],
-            "pre_has_j1900c_2": pre["has_j1900c_2"],
-            "post_n_assessments": post["n_assessments"],
-            "post_j1900c_values": post["j1900c_values"],
-            "post_j1900c_eq1": post["j1900c_eq1_count"],
-            "post_j1900c_eq2": post["j1900c_eq2_count"],
-            "post_any_fall": post["has_any_fall"],
-            "post_has_j1900c_2": post["has_j1900c_2"],
-        })
+        }
+
+        for wd in (90, 120):
+            row.update(_build_prepost_falls(pid, fid, mds, clinic_dates,
+                                            post_end - timedelta(days=wd - 1), post_end, wd))
+
+        rows.append(row)
 
     return pd.DataFrame(rows)
 
@@ -548,8 +567,45 @@ def _count_hosp_in_window(patient_mds, window_start, window_end):
     }
 
 
-def step6_kpi4(mds, vitaline, eligible_df, post_start, post_end):
-    """KPI 4: Pre/Post 90-day hospitalization comparison."""
+def _build_prepost_hosp(pid, fid, mds, clinic_dates, post_end, window_days):
+    """Compute pre/post hospitalization metrics for a given window size."""
+    pre_start, pre_end = _find_pre_window(clinic_dates, window_days)
+    pm = mds[(mds["surrogate_patient_id"] == pid) & (mds["surrogate_facility_id"] == fid)]
+
+    empty = {"n_discharges": 0, "n_hospitalizations": 0,
+             "has_1plus": False, "has_2plus": False}
+
+    post_start_adj = post_end - timedelta(days=window_days - 1)
+
+    pre = _count_hosp_in_window(pm, pd.Timestamp(pre_start), pd.Timestamp(pre_end)) \
+        if pre_start else empty
+    post = _count_hosp_in_window(pm, post_start_adj, post_end)
+
+    gap_source = "pre-first-visit"
+    if clinic_dates and len(clinic_dates) > 1:
+        for i in range(len(clinic_dates) - 1, 0, -1):
+            if (clinic_dates[i] - clinic_dates[i - 1]).days > window_days:
+                gap_source = f"gap between {clinic_dates[i-1]} and {clinic_dates[i]}"
+                break
+
+    pfx = f"_{window_days}d"
+    return {
+        f"pre_start{pfx}": str(pre_start) if pre_start else "",
+        f"pre_end{pfx}": str(pre_end) if pre_end else "",
+        f"post_start{pfx}": str(post_start_adj.date()),
+        f"post_end{pfx}": str(post_end.date()),
+        f"pre_source{pfx}": gap_source,
+        f"pre_hosp{pfx}": pre["n_hospitalizations"],
+        f"pre_1plus{pfx}": pre["has_1plus"],
+        f"pre_2plus{pfx}": pre["has_2plus"],
+        f"post_hosp{pfx}": post["n_hospitalizations"],
+        f"post_1plus{pfx}": post["has_1plus"],
+        f"post_2plus{pfx}": post["has_2plus"],
+    }
+
+
+def step6_kpi4(mds, vitaline, eligible_df, post_end):
+    """KPI 4: Pre/Post hospitalization comparison — 90-day and 120-day windows."""
     v_received = vitaline[vitaline["participation"] == "Received"]
 
     rows = []
@@ -561,41 +617,11 @@ def step6_kpi4(mds, vitaline, eligible_df, post_start, post_end):
             v_received[v_received["surrogate_patient_id"] == pid]["clinic_date"]
             .dropna().dt.date.tolist()
         )
-        pre_start, pre_end = _find_pre_90_window(clinic_dates)
 
-        pm = mds[(mds["surrogate_patient_id"] == pid) & (mds["surrogate_facility_id"] == fid)]
-
-        empty_pre = {"n_discharges": 0, "n_hospitalizations": 0,
-                     "discharge_statuses": "", "has_1plus": False, "has_2plus": False}
-        pre = _count_hosp_in_window(pm, pd.Timestamp(pre_start), pd.Timestamp(pre_end)) \
-            if pre_start else empty_pre
-        post = _count_hosp_in_window(pm, post_start, post_end)
-
-        gap_source = "pre-first-visit"
-        if clinic_dates and len(clinic_dates) > 1:
-            for i in range(len(clinic_dates) - 1, 0, -1):
-                if (clinic_dates[i] - clinic_dates[i - 1]).days > 90:
-                    gap_source = f"gap between {clinic_dates[i-1]} and {clinic_dates[i]}"
-                    break
-
-        rows.append({
-            "surrogate_patient_id": pid, "surrogate_facility_id": fid,
-            "pre_window_start": str(pre_start) if pre_start else "",
-            "pre_window_end": str(pre_end) if pre_end else "",
-            "post_window_start": str(post_start.date()),
-            "post_window_end": str(post_end.date()),
-            "pre_window_source": gap_source,
-            "pre_n_discharges": pre["n_discharges"],
-            "pre_n_hospitalizations": pre["n_hospitalizations"],
-            "pre_discharge_statuses": pre["discharge_statuses"],
-            "pre_has_1plus_hosp": pre["has_1plus"],
-            "pre_has_2plus_hosp": pre["has_2plus"],
-            "post_n_discharges": post["n_discharges"],
-            "post_n_hospitalizations": post["n_hospitalizations"],
-            "post_discharge_statuses": post["discharge_statuses"],
-            "post_has_1plus_hosp": post["has_1plus"],
-            "post_has_2plus_hosp": post["has_2plus"],
-        })
+        row = {"surrogate_patient_id": pid, "surrogate_facility_id": fid}
+        for wd in (90, 120):
+            row.update(_build_prepost_hosp(pid, fid, mds, clinic_dates, post_end, wd))
+        rows.append(row)
 
     return pd.DataFrame(rows)
 
@@ -640,33 +666,41 @@ def compute_summary(eligible_df, longstay_df, kpi1_df, kpi2_df, kpi3_df, kpi4_df
         k2_d, k2_n, k2_r = _kpi_stats(k2)
 
         n3 = len(k3)
-        k3pa = int(k3["pre_any_fall"].sum()) if n3 else 0
-        k3oa = int(k3["post_any_fall"].sum()) if n3 else 0
-        k3pb = int(k3["pre_has_j1900c_2"].sum()) if n3 else 0
-        k3ob = int(k3["post_has_j1900c_2"].sum()) if n3 else 0
-
         n4 = len(k4)
-        k4pa = int(k4["pre_has_1plus_hosp"].sum()) if n4 else 0
-        k4oa = int(k4["post_has_1plus_hosp"].sum()) if n4 else 0
-        k4pb = int(k4["pre_has_2plus_hosp"].sum()) if n4 else 0
-        k4ob = int(k4["post_has_2plus_hosp"].sum()) if n4 else 0
 
-        summary_rows.append({
+        def _pp(df, col):
+            return int(df[col].sum()) if len(df) else 0
+
+        row = {
             "Facility": label, "Company": company,
             "Eligible Patients": n_eligible, "Long-Stay Patients": n_longstay,
             "KPI1 Denom": k1_d, "KPI1 Num": k1_n, "KPI1 Rate": k1_r,
             "KPI2 Denom": k2_d, "KPI2 Num": k2_n, "KPI2 Rate": k2_r,
-            "KPI3 Eligible": n3,
-            "KPI3-A Pre (>=1 fall)": k3pa, "KPI3-A Post (>=1 fall)": k3oa,
-            "KPI3-A Pre %": _rate(k3pa, n3), "KPI3-A Post %": _rate(k3oa, n3),
-            "KPI3-B Pre (J1900C=2)": k3pb, "KPI3-B Post (J1900C=2)": k3ob,
-            "KPI3-B Pre %": _rate(k3pb, n3), "KPI3-B Post %": _rate(k3ob, n3),
-            "KPI4 Eligible": n4,
-            "KPI4-A Pre (>=1 hosp)": k4pa, "KPI4-A Post (>=1 hosp)": k4oa,
-            "KPI4-A Pre %": _rate(k4pa, n4), "KPI4-A Post %": _rate(k4oa, n4),
-            "KPI4-B Pre (>=2 hosp)": k4pb, "KPI4-B Post (>=2 hosp)": k4ob,
-            "KPI4-B Pre %": _rate(k4pb, n4), "KPI4-B Post %": _rate(k4ob, n4),
-        })
+        }
+
+        for wd in (90, 120):
+            s = f"_{wd}d"
+            row[f"KPI3 Pre >=1 fall {wd}d"] = _pp(k3, f"pre_any_fall{s}")
+            row[f"KPI3 Post >=1 fall {wd}d"] = _pp(k3, f"post_any_fall{s}")
+            row[f"KPI3 Pre >=1 fall {wd}d %"] = _rate(_pp(k3, f"pre_any_fall{s}"), n3)
+            row[f"KPI3 Post >=1 fall {wd}d %"] = _rate(_pp(k3, f"post_any_fall{s}"), n3)
+            row[f"KPI3 Pre 2+ falls {wd}d"] = _pp(k3, f"pre_2plus_falls{s}")
+            row[f"KPI3 Post 2+ falls {wd}d"] = _pp(k3, f"post_2plus_falls{s}")
+            row[f"KPI3 Pre 2+ falls {wd}d %"] = _rate(_pp(k3, f"pre_2plus_falls{s}"), n3)
+            row[f"KPI3 Post 2+ falls {wd}d %"] = _rate(_pp(k3, f"post_2plus_falls{s}"), n3)
+            row[f"KPI3 Pre J1900C=2 {wd}d"] = _pp(k3, f"pre_j1900c2{s}")
+            row[f"KPI3 Post J1900C=2 {wd}d"] = _pp(k3, f"post_j1900c2{s}")
+
+            row[f"KPI4 Pre >=1 hosp {wd}d"] = _pp(k4, f"pre_1plus{s}")
+            row[f"KPI4 Post >=1 hosp {wd}d"] = _pp(k4, f"post_1plus{s}")
+            row[f"KPI4 Pre >=1 hosp {wd}d %"] = _rate(_pp(k4, f"pre_1plus{s}"), n4)
+            row[f"KPI4 Post >=1 hosp {wd}d %"] = _rate(_pp(k4, f"post_1plus{s}"), n4)
+            row[f"KPI4 Pre >=2 hosp {wd}d"] = _pp(k4, f"pre_2plus{s}")
+            row[f"KPI4 Post >=2 hosp {wd}d"] = _pp(k4, f"post_2plus{s}")
+            row[f"KPI4 Pre >=2 hosp {wd}d %"] = _rate(_pp(k4, f"pre_2plus{s}"), n4)
+            row[f"KPI4 Post >=2 hosp {wd}d %"] = _rate(_pp(k4, f"post_2plus{s}"), n4)
+
+        summary_rows.append(row)
 
     return pd.DataFrame(summary_rows)
 
@@ -826,12 +860,12 @@ def main():
     kpi2_df = step4_kpi2(mds, eligible_df, longstay_df)
     print("  Done.")
 
-    print("Step 5: KPI 3 -- Pre/Post 90-day Falls...")
-    kpi3_df = step5_kpi3(mds, vitaline, eligible_df, post_90_start, post_90_end)
+    print("Step 5: KPI 3 -- Pre/Post Falls (90d + 120d)...")
+    kpi3_df = step5_kpi3(mds, vitaline, eligible_df, report_end)
     print("  Done.")
 
-    print("Step 6: KPI 4 -- Pre/Post 90-day Hospitalizations...")
-    kpi4_df = step6_kpi4(mds, vitaline, eligible_df, post_90_start, post_90_end)
+    print("Step 6: KPI 4 -- Pre/Post Hospitalizations (90d + 120d)...")
+    kpi4_df = step6_kpi4(mds, vitaline, eligible_df, report_end)
     print("  Done.")
     print()
 
@@ -856,18 +890,27 @@ def main():
         else:
             print(f"    N/A")
     print()
-    for label, prefix in [("KPI 3 (Pre/Post Falls)", "KPI3"), ("KPI 4 (Pre/Post Hosp)", "KPI4")]:
-        pa = overall[f"{prefix}-A Pre %"]
-        oa = overall[f"{prefix}-A Post %"]
-        pb = overall[f"{prefix}-B Pre %"]
-        ob = overall[f"{prefix}-B Post %"]
-        da = ">=1 fall" if prefix == "KPI3" else ">=1 hosp"
-        db = "J1900C=2" if prefix == "KPI3" else ">=2 hosp"
-        print(f"  {label}:")
+    for wd in (90, 120):
+        print(f"  KPI 3 (Falls, {wd}-day windows):")
+        pa = overall.get(f"KPI3 Pre >=1 fall {wd}d %")
+        oa = overall.get(f"KPI3 Post >=1 fall {wd}d %")
         if pa is not None and oa is not None:
-            print(f"    Part A ({da}): Pre {pa:.1%} -> Post {oa:.1%}")
+            print(f"    >=1 fall: Pre {pa:.1%} -> Post {oa:.1%}")
+        pb = overall.get(f"KPI3 Pre 2+ falls {wd}d %")
+        ob = overall.get(f"KPI3 Post 2+ falls {wd}d %")
         if pb is not None and ob is not None:
-            print(f"    Part B ({db}): Pre {pb:.1%} -> Post {ob:.1%}")
+            print(f"    2+ falls: Pre {pb:.1%} -> Post {ob:.1%}")
+
+    for wd in (90, 120):
+        print(f"  KPI 4 (Hosp, {wd}-day windows):")
+        pa = overall.get(f"KPI4 Pre >=1 hosp {wd}d %")
+        oa = overall.get(f"KPI4 Post >=1 hosp {wd}d %")
+        if pa is not None and oa is not None:
+            print(f"    >=1 hosp: Pre {pa:.1%} -> Post {oa:.1%}")
+        pb = overall.get(f"KPI4 Pre >=2 hosp {wd}d %")
+        ob = overall.get(f"KPI4 Post >=2 hosp {wd}d %")
+        if pb is not None and ob is not None:
+            print(f"    >=2 hosp: Pre {pb:.1%} -> Post {ob:.1%}")
     print("=" * 60)
     print()
 
