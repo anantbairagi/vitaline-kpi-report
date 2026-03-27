@@ -47,7 +47,7 @@ def load_context():
 
 
 if not EXCEL_PATH.exists():
-    st.error(f"Report not found. Run `python scripts/generate_kpi_report.py` first.")
+    st.error("Report not found. Run `python scripts/generate_kpi_report.py` first.")
     st.stop()
 
 data = load_excel()
@@ -107,28 +107,26 @@ st.markdown(
     unsafe_allow_html=True)
 st.markdown("---")
 
-# ── DEFINITIONS ──────────────────────────────────────────────────────────────
+# ── KEY DEFINITIONS (always visible) ─────────────────────────────────────────
 
-with st.expander("Key Definitions Used in This Report"):
-    st.markdown(
-        "- **Eligible Patient**: A Vitaline patient who received an infusion in the report "
-        "month and has 3 or more contiguous months of treatment (1-month gap allowed).\n"
-        "- **Long-Stay Resident**: A patient whose cumulative days in facility (CDIF) is "
-        "101 days or more, per CMS definition.\n"
-        "- **Episode**: A period of continuous care at a facility. Starts with an admission. "
-        "If a patient is discharged and returns within 30 days, it's a reentry in the same "
-        "episode. Otherwise, it's a new episode.\n"
-        "- **Target Assessment**: The patient's most recent qualifying MDS assessment, "
-        "no more than 120 days before the end of their current episode.\n"
-        "- **Target Date**: For entry records = entry date. For discharges = discharge date. "
-        "For all other assessments = Assessment Reference Date (ARD).\n"
-        "- **Qualifying Assessment**: An MDS assessment with a Reason for Assessment (RFA) of: "
-        "OBRA (A0310A = 01-06), PPS (A0310B = 01-06), or discharge (A0310F = 10, 11).\n"
-        "- **Look-back Scan**: Starting from the target assessment, scan all qualifying "
-        "assessments going back up to 275 days within the same episode. This covers "
-        "approximately 1 year of clinical history.\n\n"
-        "*Source: CMS MDS 3.0 Quality Measures User's Manual V17 (January 2025)*"
-    )
+st.info(
+    "**Key Definitions**\n\n"
+    "- **Eligible Patient**: Received a Vitaline infusion in the report month "
+    "with 3+ contiguous months of treatment (1-month gap allowed).\n"
+    "- **Long-Stay**: Cumulative days in facility (CDIF) of 101+ days, per CMS.\n"
+    "- **Episode**: Continuous care at a facility. Starts with admission. "
+    "If discharged and returned within 30 days, it's a reentry in the same episode.\n"
+    "- **Target Assessment**: Patient's most recent qualifying MDS assessment, "
+    "no more than 120 days before episode end.\n"
+    "- **Target Date**: Entry date for entries, discharge date for discharges, "
+    "Assessment Reference Date (ARD) for everything else.\n"
+    "- **Qualifying Assessment**: OBRA (A0310A = 01-06), PPS (A0310B = 01-06), "
+    "or discharge (A0310F = 10, 11).\n"
+    "- **Look-back Scan**: From the target assessment, scan all qualifying "
+    "assessments going back up to 275 days within the episode (~1 year of history).\n\n"
+    "*Source: CMS MDS 3.0 Quality Measures User's Manual V17 (January 2025)*"
+)
+st.markdown("---")
 
 # ── SECTION 1 ────────────────────────────────────────────────────────────────
 
@@ -147,22 +145,15 @@ with c2:
 with c3:
     card("Facilities Served", str(n_facilities),
          "Skilled nursing facilities across Accolade, Empire, Caliber, and Paradigm.")
-
-with st.expander("View breakdown by participation type"):
-    st.dataframe(activity.rename(columns={"participation": "Participation",
-                 "visits": "Visits", "patients": "Unique Patients"}),
-                 use_container_width=True, hide_index=True)
 st.markdown("---")
 
 # ── SECTION 2 ────────────────────────────────────────────────────────────────
 
 st.header("2. Identifying Eligible Patients")
-st.markdown("Not every patient qualifies. We require a **meaningful treatment history**:")
 st.info("**Eligibility Criteria**\n\n"
         "1. **Active in January 2026** — received at least one infusion.\n"
-        "2. **3+ contiguous months** — counting backwards from January, the patient must have "
-        "received infusions in at least 3 distinct months, with at most a 1-month gap between "
-        "any two consecutive months.")
+        "2. **3+ contiguous months** — counting backwards from January, infusions in at least "
+        "3 distinct months with at most a 1-month gap.")
 
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -171,7 +162,7 @@ with c1:
 with c2:
     card("Eligible Patients", str(n_eligible),
          f"{pct(n_eligible, received_visits)} of active patients met the 3+ contiguous month "
-         f"criteria — they have a sustained treatment history.")
+         f"criteria -- they have a sustained treatment history.")
 with c3:
     card("Not Eligible", str(received_visits - n_eligible),
          "Had fewer than 3 contiguous months of treatment.")
@@ -187,20 +178,19 @@ st.markdown("---")
 # ── SECTION 3 ────────────────────────────────────────────────────────────────
 
 st.header("3. Long-Stay Residents")
-st.markdown("CMS quality measures for falls apply only to **long-stay** residents:")
 st.info("**Long-Stay Definition** (CMS V17)\n\n"
         "A resident is long-stay if their **Cumulative Days in Facility (CDIF) is 101+ days**.\n\n"
-        "- Each patient's stay history is reconstructed from MDS entry/discharge records.\n"
-        "- Admission vs reentry is determined by **A1700** on the entry record.\n"
+        "- Stay history reconstructed from MDS entry/discharge records.\n"
+        "- Admission vs reentry determined by **A1700** on the entry record.\n"
         "- CDIF counts only in-facility days. Hospital days do not count.\n\n"
-        "*Source: CMS QM User's Manual V17, Chapter 1 Section 1, Chapter 4*")
+        "*Source: CMS QM V17, Chapter 1 Section 1, Chapter 4*")
 
 ls_df = data["longstay"]
 median_cdif = int(ls_df[ls_df["is_long_stay"] == True]["cdif"].median()) if n_longstay else 0
 
 c1, c2, c3 = st.columns(3)
 with c1:
-    card("Eligible Patients", str(n_eligible), "From Step 2 — patients with 3+ months of treatment.")
+    card("Eligible Patients", str(n_eligible), "From Step 2 -- patients with 3+ months of treatment.")
 with c2:
     card("Long-Stay (101+ Days)", str(n_longstay),
          f"{pct(n_longstay, n_eligible)} of eligible patients have 101+ cumulative days "
@@ -220,23 +210,18 @@ st.markdown("---")
 
 # ── SECTION 4: KPI 1 ────────────────────────────────────────────────────────
 
-st.header("4. KPI 1 — Falls with Major Injury")
+st.header("4. KPI 1 -- Falls with Major Injury")
 st.markdown("CMS measure **N013.02**: *Percent of Residents Experiencing One or More Falls "
-            "with Major Injury (Long Stay)*. Among our long-stay Vitaline patients, **what "
-            "percentage experienced a fall with major injury?**")
-st.info("**How it's calculated** (CMS V17 exact methodology)\n\n"
-        "1. **Find the target assessment**: the patient's most recent qualifying MDS assessment "
-        "within their current episode, no more than 120 days before the episode end.\n"
-        "2. **Look-back scan**: from the target assessment, scan all qualifying assessments "
-        "going back up to 275 days within the same episode — covering roughly 1 year of "
-        "clinical history.\n"
-        "3. **Qualifying assessments**: OBRA (A0310A = 01-06), PPS (A0310B = 01-06), or "
-        "discharge (A0310F = 10, 11).\n"
-        "4. **Denominator**: long-stay patients with at least one scan assessment where "
-        "falls with major injury (J1900C) was coded by the assessor.\n"
-        "5. **Numerator**: patients where J1900C = 1 or 2 (one or more major-injury falls) "
-        "on any assessment in the scan.\n\n"
-        "*Source: CMS QM User's Manual V17, Table 2-12, Chapter 1 Section 4*")
+            "with Major Injury (Long Stay)*.")
+st.info("**How it's calculated** (CMS V17)\n\n"
+        "1. Find the **target assessment** -- most recent qualifying assessment within the "
+        "current episode, no more than 120 days before episode end.\n"
+        "2. **Look-back scan** -- from the target, scan all qualifying assessments going back "
+        "up to 275 days within the episode (~1 year).\n"
+        "3. **Denominator**: long-stay patients with at least one scan assessment where "
+        "J1900C (falls with major injury) was coded.\n"
+        "4. **Numerator**: patients where J1900C = 1 or 2 on any scan assessment.\n\n"
+        "*Source: CMS V17, Table 2-12, Chapter 1 Section 4*")
 
 k1 = data["kpi1"]
 k1_ls = k1[k1["is_long_stay"] == True]
@@ -246,18 +231,18 @@ k1_num = int((k1_ls["in_numerator"] == True).sum())
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     card("Long-Stay Patients", str(n_longstay),
-         f"{n_longstay} eligible patients with 101+ cumulative days at their facility.")
+         f"<b>{n_longstay}</b> eligible patients with 101+ cumulative days at their facility.")
 with c2:
     card("In Denominator", str(k1_denom),
-         f"Of {n_longstay} long-stay patients, {k1_denom} had qualifying assessments "
-         f"where falls with major injury (J1900C) was coded during the ~1 year look-back scan.")
+         f"Of <b>{n_longstay}</b> long-stay patients, <b>{k1_denom}</b> had qualifying "
+         f"assessments where J1900C was coded during the ~1 year look-back scan.")
 with c3:
     card("Had Major-Injury Fall", str(k1_num),
-         f"Of those {k1_denom} patients, {k1_num} had at least one assessment reporting "
-         f"a fall with major injury (J1900C = 1 or 2) during the scan period.")
+         f"Of those <b>{k1_denom}</b> patients, <b>{k1_num}</b> had at least one assessment "
+         f"reporting a fall with major injury during the scan period.")
 with c4:
     card("Rate", pct(k1_num, k1_denom),
-         f"{pct(k1_num, k1_denom)} of assessed long-stay Vitaline patients experienced "
+         f"<b>{pct(k1_num, k1_denom)}</b> of assessed long-stay Vitaline patients experienced "
          f"a major-injury fall in the past year." if k1_denom > 0 else "N/A")
 
 with st.expander("View KPI 1 patient-level detail"):
@@ -273,21 +258,17 @@ st.markdown("---")
 
 # ── SECTION 5: KPI 2 ────────────────────────────────────────────────────────
 
-st.header("5. KPI 2 — Prevalence of Falls")
-st.markdown("CMS measure **N032.02**: *Prevalence of Falls (Long Stay)*. "
-            "**What percentage of long-stay Vitaline patients had any fall at all?**")
-st.info("**How it's calculated** (CMS V17 exact methodology)\n\n"
-        "1. **Find the target assessment**: same as KPI 1 — the patient's most recent "
-        "qualifying assessment, no more than 120 days before episode end.\n"
-        "2. **Look-back scan**: scan all qualifying assessments going back up to 275 days "
-        "within the same episode.\n"
-        "3. **Qualifying assessments**: OBRA (A0310A = 01-06), PPS (A0310B = 01-06), or "
-        "discharge (A0310F = 10, 11).\n"
-        "4. **Denominator**: long-stay patients with at least one scan assessment where "
-        "any fall (J1800) was coded.\n"
-        "5. **Numerator**: patients where J1800 = 1 (yes, had a fall since prior assessment) "
-        "on any assessment in the scan.\n\n"
-        "*Source: CMS QM User's Manual V17, Table 2-32*")
+st.header("5. KPI 2 -- Prevalence of Falls")
+st.markdown("CMS measure **N032.02**: *Prevalence of Falls (Long Stay)*.")
+st.info("**How it's calculated** (CMS V17)\n\n"
+        "1. Find the **target assessment** -- most recent qualifying assessment within the "
+        "current episode, no more than 120 days before episode end.\n"
+        "2. **Look-back scan** -- from the target, scan all qualifying assessments going back "
+        "up to 275 days within the episode (~1 year).\n"
+        "3. **Denominator**: long-stay patients with at least one scan assessment where "
+        "J1800 (any fall since prior assessment) was coded.\n"
+        "4. **Numerator**: patients where J1800 = 1 (yes, had a fall) on any scan assessment.\n\n"
+        "*Source: CMS V17, Table 2-32*")
 
 k2 = data["kpi2"]
 k2_ls = k2[k2["is_long_stay"] == True]
@@ -297,18 +278,18 @@ k2_num = int((k2_ls["in_numerator"] == True).sum())
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     card("Long-Stay Patients", str(n_longstay),
-         f"{n_longstay} eligible patients with 101+ cumulative days at their facility.")
+         f"<b>{n_longstay}</b> eligible patients with 101+ cumulative days at their facility.")
 with c2:
     card("In Denominator", str(k2_denom),
-         f"Of {n_longstay} long-stay patients, {k2_denom} had qualifying assessments "
-         f"where any fall (J1800) was coded during the ~1 year look-back scan.")
+         f"Of <b>{n_longstay}</b> long-stay patients, <b>{k2_denom}</b> had qualifying "
+         f"assessments where J1800 was coded during the ~1 year look-back scan.")
 with c3:
     card("Had a Fall", str(k2_num),
-         f"Of those {k2_denom} patients, {k2_num} had at least one assessment reporting "
-         f"a fall (J1800 = 1) during the scan period.")
+         f"Of those <b>{k2_denom}</b> patients, <b>{k2_num}</b> had at least one assessment "
+         f"reporting a fall during the scan period.")
 with c4:
     card("Rate", pct(k2_num, k2_denom),
-         f"{pct(k2_num, k2_denom)} of assessed long-stay Vitaline patients had a fall "
+         f"<b>{pct(k2_num, k2_denom)}</b> of assessed long-stay Vitaline patients had a fall "
          f"reported in the past year." if k2_denom > 0 else "N/A")
 
 with st.expander("View KPI 2 patient-level detail"):
@@ -324,20 +305,17 @@ st.markdown("---")
 
 # ── SECTION 6: KPI 3 ────────────────────────────────────────────────────────
 
-st.header("6. KPI 3 — Falls: Non-Vitaline Period vs Vitaline Treatment Period")
-st.markdown(f"This compares major-injury falls **before** a patient started Vitaline versus "
-            f"**during** treatment. It applies to all **{n_eligible} eligible patients** "
-            f"(not just long-stay).")
-st.info("**How the comparison works**\n\n"
-        "- **Non-Vitaline Period**: The most recent period (90 or 120 days) when the patient "
-        "was **not receiving** Vitaline infusions. We scan gaps between consecutive visits. "
-        "If no gap exists, we use the period before their first visit.\n"
-        "- **Vitaline Treatment Period**: The most recent 90 or 120 days ending January 31, 2026 "
-        "— a period when the patient was actively receiving Vitaline.\n\n"
-        "For each period, we check MDS assessments for falls with major injury (J1900C).\n\n"
+st.header("6. KPI 3 -- Falls: Non-Vitaline Period vs Vitaline Treatment Period")
+st.markdown(f"Compares major-injury falls **before** Vitaline versus **during** treatment "
+            f"for all <b>{n_eligible}</b> eligible patients.", unsafe_allow_html=True)
+st.info("**How it works**\n\n"
+        "- **Non-Vitaline Period**: Most recent 90 or 120 days when the patient was "
+        "not receiving Vitaline infusions.\n"
+        "- **Vitaline Treatment Period**: Most recent 90 or 120 days ending Jan 31, 2026.\n\n"
+        "For each period, we check MDS assessments for falls with major injury (J1900C):\n"
         "- **Part A**: patients with at least 1 major-injury fall (J1900C = 1 or 2)\n"
-        "- **Part B**: patients with 2+ major-injury falls across separate assessments\n"
-        "- **Part C**: patients with 2+ major-injury falls on a single assessment (J1900C = 2)")
+        "- **Part B**: patients with 2+ major-injury falls within a single assessment "
+        "period (J1900C = 2)")
 
 k3 = data["kpi3"]
 
@@ -347,52 +325,76 @@ for wd in (90, 120):
 
     pre_a = int(k3[f"pre_any_fall{s}"].sum())
     post_a = int(k3[f"post_any_fall{s}"].sum())
-    pre_b = int(k3[f"pre_2plus_falls{s}"].sum())
-    post_b = int(k3[f"post_2plus_falls{s}"].sum())
-    pre_c = int(k3[f"pre_j1900c2{s}"].sum())
-    post_c = int(k3[f"post_j1900c2{s}"].sum())
+    pre_b = int(k3[f"pre_j1900c2{s}"].sum())
+    post_b = int(k3[f"post_j1900c2{s}"].sum())
 
     pa_pct = pre_a / n_eligible if n_eligible else 0
     oa_pct = post_a / n_eligible if n_eligible else 0
     da = oa_pct - pa_pct
 
-    st.markdown(f"**Part A — At least 1 major-injury fall** "
-                f"({pre_a} non-Vitaline vs {post_a} Vitaline)")
+    pb_pct = pre_b / n_eligible if n_eligible else 0
+    ob_pct = post_b / n_eligible if n_eligible else 0
+    db = ob_pct - pb_pct
+
+    st.markdown(f"**Part A -- At least 1 major-injury fall** "
+                f"(<b>{pre_a}</b> non-Vitaline vs <b>{post_a}</b> Vitaline)",
+                unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     with c1:
         card("Non-Vitaline Period", f"{pa_pct:.1%}",
-             f"**{pre_a}** of {n_eligible} patients had a major-injury fall "
+             f"<b>{pre_a}</b> of <b>{n_eligible}</b> patients had a major-injury fall "
              f"during the {wd} days before Vitaline treatment.")
     with c2:
         card("Vitaline Treatment Period", f"{oa_pct:.1%}",
-             f"**{post_a}** of {n_eligible} patients had a major-injury fall "
+             f"<b>{post_a}</b> of <b>{n_eligible}</b> patients had a major-injury fall "
              f"during the most recent {wd} days of treatment.")
     with c3:
         change_card("Change", f"{da:+.1%}",
                     "Fewer patients experienced major-injury falls during Vitaline treatment."
                     if da <= 0 else "More patients had falls during treatment.", da <= 0)
 
-    pb_pct = pre_b / n_eligible if n_eligible else 0
-    ob_pct = post_b / n_eligible if n_eligible else 0
-
-    st.markdown(f"**Part B — 2+ falls across separate assessments** "
-                f"({pre_b} vs {post_b}) &nbsp; | &nbsp; "
-                f"**Part C — J1900C=2 on single assessment** ({pre_c} vs {post_c})",
+    st.markdown(f"**Part B -- 2+ major-injury falls in a single assessment period** "
+                f"(<b>{pre_b}</b> non-Vitaline vs <b>{post_b}</b> Vitaline)",
                 unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        card("Non-Vitaline Period", f"{pb_pct:.1%}",
+             f"<b>{pre_b}</b> of <b>{n_eligible}</b> patients had 2+ major-injury falls "
+             f"within a single assessment period (J1900C = 2) during the {wd}-day non-Vitaline window.")
+    with c2:
+        card("Vitaline Treatment Period", f"{ob_pct:.1%}",
+             f"<b>{post_b}</b> of <b>{n_eligible}</b> patients had 2+ major-injury falls "
+             f"within a single assessment period during the {wd}-day Vitaline window.")
+    with c3:
+        change_card("Change", f"{db:+.1%}",
+                    "Fewer patients had repeated major-injury falls."
+                    if db <= 0 else "More patients had repeated falls.", db <= 0)
+    st.markdown("")
 
-st.markdown("")
+st.markdown(
+    "<div style='background:#e8f4f8;border-radius:8px;padding:14px 16px;border:1px solid #b8daff;'>"
+    "<p style='margin:0 0 6px 0;font-weight:600;color:#004085;'>How to read these results</p>"
+    "<p style='margin:0;font-size:0.88rem;color:#004085;'>"
+    "A <b>negative change</b> (green) means fewer patients experienced falls during Vitaline "
+    "treatment compared to the period before treatment -- suggesting a positive impact. "
+    "For example, if Non-Vitaline shows 1.3% and Vitaline shows 0.8%, that means the rate "
+    "dropped by 0.5 percentage points. The 120-day window captures more assessment data "
+    "than 90 days, giving a broader view of the trend.</p></div>",
+    unsafe_allow_html=True)
+
 with st.expander("View KPI 3 patient-level detail"):
     st.dataframe(k3, use_container_width=True, hide_index=True, height=400)
 st.markdown("---")
 
 # ── SECTION 7: KPI 4 ────────────────────────────────────────────────────────
 
-st.header("7. KPI 4 — Hospitalizations: Non-Vitaline vs Vitaline Period")
-st.markdown("Same comparison as KPI 3 but for **acute care hospitalizations** — "
-            "when a patient is discharged from the nursing facility to a hospital.")
+st.header("7. KPI 4 -- Hospitalizations: Non-Vitaline vs Vitaline Period")
+st.markdown(f"Same comparison for <b>acute care hospitalizations</b> -- when a patient is "
+            f"discharged to a hospital. All <b>{n_eligible}</b> eligible patients.",
+            unsafe_allow_html=True)
 st.info("**How hospitalizations are counted**\n\n"
-        "A hospitalization = discharge record (A0310F = 10 or 11) where the patient went to "
-        "an **acute care hospital** (discharge_status = '04').\n\n"
+        "A hospitalization = discharge record (A0310F = 10 or 11) to an acute care hospital "
+        "(discharge_status = '04').\n\n"
         "- **Part A**: patients with at least 1 hospitalization\n"
         "- **Part B**: patients with 2 or more hospitalizations")
 
@@ -411,27 +413,56 @@ for wd in (90, 120):
     oa_pct = post_a / n_eligible if n_eligible else 0
     da = oa_pct - pa_pct
 
-    st.markdown(f"**Part A — At least 1 hospitalization** "
-                f"({pre_a} non-Vitaline vs {post_a} Vitaline)")
+    pb_pct = pre_b / n_eligible if n_eligible else 0
+    ob_pct = post_b / n_eligible if n_eligible else 0
+    db = ob_pct - pb_pct
+
+    st.markdown(f"**Part A -- At least 1 hospitalization** "
+                f"(<b>{pre_a}</b> non-Vitaline vs <b>{post_a}</b> Vitaline)",
+                unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     with c1:
         card("Non-Vitaline Period", f"{pa_pct:.1%}",
-             f"**{pre_a}** of {n_eligible} patients were hospitalized at least once "
+             f"<b>{pre_a}</b> of <b>{n_eligible}</b> patients were hospitalized at least once "
              f"during the {wd} days before Vitaline treatment.")
     with c2:
         card("Vitaline Treatment Period", f"{oa_pct:.1%}",
-             f"**{post_a}** of {n_eligible} patients were hospitalized at least once "
+             f"<b>{post_a}</b> of <b>{n_eligible}</b> patients were hospitalized at least once "
              f"during the most recent {wd} days of treatment.")
     with c3:
         change_card("Change", f"{da:+.1%}",
                     "Fewer patients required hospitalization during Vitaline treatment."
                     if da <= 0 else "More hospitalizations during treatment.", da <= 0)
 
-    pb_pct = pre_b / n_eligible if n_eligible else 0
-    ob_pct = post_b / n_eligible if n_eligible else 0
-    st.markdown(f"**Part B — 2+ hospitalizations** ({pre_b} non-Vitaline vs {post_b} Vitaline)")
+    st.markdown(f"**Part B -- 2+ hospitalizations** "
+                f"(<b>{pre_b}</b> non-Vitaline vs <b>{post_b}</b> Vitaline)",
+                unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        card("Non-Vitaline Period", f"{pb_pct:.1%}",
+             f"<b>{pre_b}</b> of <b>{n_eligible}</b> patients were hospitalized 2+ times "
+             f"during the {wd}-day non-Vitaline window.")
+    with c2:
+        card("Vitaline Treatment Period", f"{ob_pct:.1%}",
+             f"<b>{post_b}</b> of <b>{n_eligible}</b> patients were hospitalized 2+ times "
+             f"during the {wd}-day Vitaline window.")
+    with c3:
+        change_card("Change", f"{db:+.1%}",
+                    "Fewer patients had repeated hospitalizations."
+                    if db <= 0 else "More repeated hospitalizations.", db <= 0)
+    st.markdown("")
 
-st.markdown("")
+st.markdown(
+    "<div style='background:#e8f4f8;border-radius:8px;padding:14px 16px;border:1px solid #b8daff;'>"
+    "<p style='margin:0 0 6px 0;font-weight:600;color:#004085;'>How to read these results</p>"
+    "<p style='margin:0;font-size:0.88rem;color:#004085;'>"
+    "A <b>negative change</b> (green) means fewer patients were hospitalized during Vitaline "
+    "treatment. For example, in the 120-day window, hospitalization dropped from <b>11.3%</b> "
+    "(non-Vitaline) to <b>5.2%</b> (Vitaline) -- a <b>6.0 percentage point decrease</b>, "
+    "meaning roughly half as many patients required acute hospitalization after starting "
+    "Vitaline IV therapy.</p></div>",
+    unsafe_allow_html=True)
+
 with st.expander("View KPI 4 patient-level detail"):
     st.dataframe(k4, use_container_width=True, hide_index=True, height=400)
 st.markdown("---")
@@ -465,10 +496,15 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 with tab1:
     dist_chart(fac, "KPI1 Rate", "Falls with Major Injury Rate by Facility", "#dc3545")
+    st.caption("Each bar shows the percentage of assessed long-stay patients at that facility "
+               "who had a major-injury fall. Longer bars = higher fall rates.")
 with tab2:
     dist_chart(fac, "KPI2 Rate", "Fall Prevalence Rate by Facility", "#fd7e14")
+    st.caption("Each bar shows the percentage of assessed long-stay patients who had any fall. "
+               "Compare your facility against others to spot outliers.")
 with tab3:
-    st.caption("90-day window: % of eligible patients with at least 1 major-injury fall")
+    st.caption("90-day window: % of eligible patients with at least 1 major-injury fall. "
+               "Gray = non-Vitaline period, blue = Vitaline treatment period.")
     plot = fac[["Facility", "Company"]].copy()
     plot["pre"] = fac.get("KPI3 Pre >=1 fall 90d %")
     plot["post"] = fac.get("KPI3 Post >=1 fall 90d %")
@@ -485,8 +521,11 @@ with tab3:
                           margin=dict(l=10, r=30, t=30, b=30),
                           legend=dict(orientation="h", y=1.02, xanchor="center", x=0.5))
         st.plotly_chart(fig, use_container_width=True)
+    st.caption("If the blue bar is shorter than the gray bar for a facility, that facility "
+               "shows improvement during Vitaline treatment.")
 with tab4:
-    st.caption("90-day window: % of eligible patients with at least 1 hospitalization")
+    st.caption("90-day window: % of eligible patients with at least 1 hospitalization. "
+               "Gray = non-Vitaline, green = Vitaline treatment.")
     plot = fac[["Facility", "Company"]].copy()
     plot["pre"] = fac.get("KPI4 Pre >=1 hosp 90d %")
     plot["post"] = fac.get("KPI4 Post >=1 hosp 90d %")
@@ -503,6 +542,8 @@ with tab4:
                           margin=dict(l=10, r=30, t=30, b=30),
                           legend=dict(orientation="h", y=1.02, xanchor="center", x=0.5))
         st.plotly_chart(fig, use_container_width=True)
+    st.caption("A shorter green bar compared to gray means fewer hospitalizations during "
+               "Vitaline treatment at that facility.")
 with tab5:
     plot = fac[["Facility", "Company", "Eligible Patients", "Long-Stay Patients"]].copy()
     plot = plot.sort_values("Eligible Patients", ascending=True)
@@ -516,6 +557,8 @@ with tab5:
                       margin=dict(l=10, r=30, t=30, b=30),
                       legend=dict(orientation="h", y=1.02, xanchor="center", x=0.5))
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("Blue = eligible Vitaline patients, purple = those classified as long-stay. "
+               "Facilities with more patients contribute more to the overall KPI rates.")
 
 st.markdown("---")
 st.markdown(
