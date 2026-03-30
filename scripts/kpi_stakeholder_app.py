@@ -393,8 +393,12 @@ st.markdown(f"Same comparison for <b>acute care hospitalizations</b> -- when a p
             f"discharged to a hospital. All <b>{n_eligible}</b> eligible patients.",
             unsafe_allow_html=True)
 st.info("**How hospitalizations are counted**\n\n"
-        "A hospitalization = discharge record (A0310F = 10 or 11) to an acute care hospital "
-        "(discharge_status = '04').\n\n"
+        "A hospitalization event is identified when both conditions are met:\n"
+        "- **A0310F = 10 or 11** -- a discharge record (return not anticipated "
+        "or return anticipated)\n"
+        "- **A2105 = '04'** -- discharge destination was an **acute care hospital**\n\n"
+        "Each such discharge record counts as one hospitalization. We count how many "
+        "fall within each time window for each patient.\n\n"
         "- **Part A**: patients with at least 1 hospitalization\n"
         "- **Part B**: patients with 2 or more hospitalizations")
 
@@ -554,12 +558,12 @@ def _column_config(include_facility=True):
             f"Falls Post% {pfx}": st.column_config.NumberColumn(f"Falls Post% {pfx}", format="%.1f%%", help=f"% of eligible with >=1 fall in {wd}d Vitaline period"),
             f"Falls J1900C=2 Pre {pfx}": st.column_config.NumberColumn(f"J1900C=2 Pre {pfx}", help=f"Patients with 2+ major-injury falls in single assessment ({wd}d non-Vitaline)"),
             f"Falls J1900C=2 Post {pfx}": st.column_config.NumberColumn(f"J1900C=2 Post {pfx}", help=f"Patients with 2+ major-injury falls in single assessment ({wd}d Vitaline)"),
-            f"Hosp Pre {pfx}": st.column_config.NumberColumn(f"Hosp Pre {pfx}", help=f"Patients with >=1 acute hospitalization during {wd}-day non-Vitaline period"),
-            f"Hosp Post {pfx}": st.column_config.NumberColumn(f"Hosp Post {pfx}", help=f"Patients with >=1 acute hospitalization during {wd}-day Vitaline treatment period"),
-            f"Hosp Pre% {pfx}": st.column_config.NumberColumn(f"Hosp Pre% {pfx}", format="%.1f%%", help=f"% of eligible with >=1 hospitalization in {wd}d non-Vitaline period"),
-            f"Hosp Post% {pfx}": st.column_config.NumberColumn(f"Hosp Post% {pfx}", format="%.1f%%", help=f"% of eligible with >=1 hospitalization in {wd}d Vitaline period"),
-            f"Hosp 2+ Pre {pfx}": st.column_config.NumberColumn(f"Hosp 2+ Pre {pfx}", help=f"Patients with 2+ hospitalizations ({wd}d non-Vitaline)"),
-            f"Hosp 2+ Post {pfx}": st.column_config.NumberColumn(f"Hosp 2+ Post {pfx}", help=f"Patients with 2+ hospitalizations ({wd}d Vitaline)"),
+            f"Hosp Pre {pfx}": st.column_config.NumberColumn(f"Hosp Pre {pfx}", help=f"Patients with >=1 acute hospitalization (A0310F=10/11 + A2105=04) during {wd}-day non-Vitaline period"),
+            f"Hosp Post {pfx}": st.column_config.NumberColumn(f"Hosp Post {pfx}", help=f"Patients with >=1 acute hospitalization (A0310F=10/11 + A2105=04) during {wd}-day Vitaline treatment period"),
+            f"Hosp Pre% {pfx}": st.column_config.NumberColumn(f"Hosp Pre% {pfx}", format="%.1f%%", help=f"% of eligible with >=1 hospitalization in {wd}d non-Vitaline period. Hospitalization = discharge to acute care hospital (A2105=04)"),
+            f"Hosp Post% {pfx}": st.column_config.NumberColumn(f"Hosp Post% {pfx}", format="%.1f%%", help=f"% of eligible with >=1 hospitalization in {wd}d Vitaline period. Hospitalization = discharge to acute care hospital (A2105=04)"),
+            f"Hosp 2+ Pre {pfx}": st.column_config.NumberColumn(f"Hosp 2+ Pre {pfx}", help=f"Patients with 2+ discharges to acute care hospital ({wd}d non-Vitaline)"),
+            f"Hosp 2+ Post {pfx}": st.column_config.NumberColumn(f"Hosp 2+ Post {pfx}", help=f"Patients with 2+ discharges to acute care hospital ({wd}d Vitaline)"),
         })
     return cfg
 
