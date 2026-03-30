@@ -469,26 +469,150 @@ st.markdown("---")
 
 # ── SECTION 8: FACILITY TABLE ────────────────────────────────────────────────
 
-st.header("8. Results by Facility")
+st.header("8. All KPIs by Facility")
+st.markdown("Complete analysis for every facility. Hover over any column header for a description.")
+
 fac = data["summary"][data["summary"]["Facility"] != "OVERALL"].copy()
 fac = fac[fac["Eligible Patients"] > 0]
 
-display_cols = {
-    "Facility": "Facility", "Company": "Company",
-    "Eligible Patients": "Eligible", "Long-Stay Patients": "Long-Stay",
-    "KPI1 Denom": "Falls Major Injury Assessed", "KPI1 Num": "Had Major-Injury Fall",
-    "KPI1 Rate": "Major Injury Rate",
-    "KPI2 Denom": "Any Fall Assessed", "KPI2 Num": "Had Fall",
-    "KPI2 Rate": "Fall Prevalence Rate",
-}
-st.dataframe(fac[list(display_cols.keys())].rename(columns=display_cols).style.format(
-    {"Major Injury Rate": "{:.1%}", "Fall Prevalence Rate": "{:.1%}"}, na_rep="--"),
-    use_container_width=True, hide_index=True, height=500)
+
+def _build_review_table(src):
+    """Build a clean review table with descriptive columns from summary data."""
+    def _pct(n, d):
+        return n / d if d > 0 else None
+
+    rows = []
+    for _, r in src.iterrows():
+        ne = r["Eligible Patients"]
+        row = {
+            "Facility": r.get("Facility", ""),
+            "Company": r.get("Company", ""),
+            "Eligible": int(ne),
+            "Long-Stay": int(r["Long-Stay Patients"]),
+            "KPI1 Assessed": int(r["KPI1 Denom"]),
+            "KPI1 Had Fall": int(r["KPI1 Num"]),
+            "KPI1 Rate": r["KPI1 Rate"],
+            "KPI2 Assessed": int(r["KPI2 Denom"]),
+            "KPI2 Had Fall": int(r["KPI2 Num"]),
+            "KPI2 Rate": r["KPI2 Rate"],
+        }
+        for wd in (90, 120):
+            pfx = f"{wd}d"
+            pre_f = int(r.get(f"KPI3 Pre >=1 fall {wd}d", 0))
+            post_f = int(r.get(f"KPI3 Post >=1 fall {wd}d", 0))
+            pre_fb = int(r.get(f"KPI3 Pre J1900C=2 {wd}d", 0))
+            post_fb = int(r.get(f"KPI3 Post J1900C=2 {wd}d", 0))
+            pre_h = int(r.get(f"KPI4 Pre >=1 hosp {wd}d", 0))
+            post_h = int(r.get(f"KPI4 Post >=1 hosp {wd}d", 0))
+            pre_hb = int(r.get(f"KPI4 Pre >=2 hosp {wd}d", 0))
+            post_hb = int(r.get(f"KPI4 Post >=2 hosp {wd}d", 0))
+
+            row.update({
+                f"Falls Pre {pfx}": pre_f,
+                f"Falls Post {pfx}": post_f,
+                f"Falls Pre% {pfx}": _pct(pre_f, ne),
+                f"Falls Post% {pfx}": _pct(post_f, ne),
+                f"Falls J1900C=2 Pre {pfx}": pre_fb,
+                f"Falls J1900C=2 Post {pfx}": post_fb,
+                f"Hosp Pre {pfx}": pre_h,
+                f"Hosp Post {pfx}": post_h,
+                f"Hosp Pre% {pfx}": _pct(pre_h, ne),
+                f"Hosp Post% {pfx}": _pct(post_h, ne),
+                f"Hosp 2+ Pre {pfx}": pre_hb,
+                f"Hosp 2+ Post {pfx}": post_hb,
+            })
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    pct_cols = [c for c in df.columns if "Rate" in c or "%" in c]
+    for c in pct_cols:
+        df[c] = df[c].apply(lambda v: v * 100 if pd.notna(v) else None)
+    return df
+
+
+def _column_config(include_facility=True):
+    """Column config with help tooltips for every column."""
+    cfg = {}
+    if include_facility:
+        cfg["Facility"] = st.column_config.TextColumn("Facility", help="De-identified facility ID")
+    cfg.update({
+        "Company": st.column_config.TextColumn("Company", help="Parent company"),
+        "Eligible": st.column_config.NumberColumn("Eligible", help="Vitaline patients with 3+ contiguous months of treatment, active in Jan 2026"),
+        "Long-Stay": st.column_config.NumberColumn("Long-Stay", help="Eligible patients with 101+ cumulative days at facility (CMS CDIF)"),
+        "KPI1 Assessed": st.column_config.NumberColumn("KPI1 Assessed", help="Long-stay patients with J1900C coded in the 275-day look-back scan (denominator)"),
+        "KPI1 Had Fall": st.column_config.NumberColumn("KPI1 Had Fall", help="Patients with J1900C = 1 or 2 (numerator) -- had a fall with major injury"),
+        "KPI1 Rate": st.column_config.NumberColumn("KPI1 Rate", format="%.1f%%", help="Falls with Major Injury rate (CMS N013.02). Numerator / Denominator x 100"),
+        "KPI2 Assessed": st.column_config.NumberColumn("KPI2 Assessed", help="Long-stay patients with J1800 coded in the 275-day look-back scan (denominator)"),
+        "KPI2 Had Fall": st.column_config.NumberColumn("KPI2 Had Fall", help="Patients with J1800 = 1 (numerator) -- had any fall"),
+        "KPI2 Rate": st.column_config.NumberColumn("KPI2 Rate", format="%.1f%%", help="Prevalence of Falls rate (CMS N032.02). Numerator / Denominator x 100"),
+    })
+    for wd in (90, 120):
+        pfx = f"{wd}d"
+        cfg.update({
+            f"Falls Pre {pfx}": st.column_config.NumberColumn(f"Falls Pre {pfx}", help=f"Patients with >=1 major-injury fall during {wd}-day non-Vitaline period"),
+            f"Falls Post {pfx}": st.column_config.NumberColumn(f"Falls Post {pfx}", help=f"Patients with >=1 major-injury fall during {wd}-day Vitaline treatment period"),
+            f"Falls Pre% {pfx}": st.column_config.NumberColumn(f"Falls Pre% {pfx}", format="%.1f%%", help=f"% of eligible with >=1 fall in {wd}d non-Vitaline period"),
+            f"Falls Post% {pfx}": st.column_config.NumberColumn(f"Falls Post% {pfx}", format="%.1f%%", help=f"% of eligible with >=1 fall in {wd}d Vitaline period"),
+            f"Falls J1900C=2 Pre {pfx}": st.column_config.NumberColumn(f"J1900C=2 Pre {pfx}", help=f"Patients with 2+ major-injury falls in single assessment ({wd}d non-Vitaline)"),
+            f"Falls J1900C=2 Post {pfx}": st.column_config.NumberColumn(f"J1900C=2 Post {pfx}", help=f"Patients with 2+ major-injury falls in single assessment ({wd}d Vitaline)"),
+            f"Hosp Pre {pfx}": st.column_config.NumberColumn(f"Hosp Pre {pfx}", help=f"Patients with >=1 acute hospitalization during {wd}-day non-Vitaline period"),
+            f"Hosp Post {pfx}": st.column_config.NumberColumn(f"Hosp Post {pfx}", help=f"Patients with >=1 acute hospitalization during {wd}-day Vitaline treatment period"),
+            f"Hosp Pre% {pfx}": st.column_config.NumberColumn(f"Hosp Pre% {pfx}", format="%.1f%%", help=f"% of eligible with >=1 hospitalization in {wd}d non-Vitaline period"),
+            f"Hosp Post% {pfx}": st.column_config.NumberColumn(f"Hosp Post% {pfx}", format="%.1f%%", help=f"% of eligible with >=1 hospitalization in {wd}d Vitaline period"),
+            f"Hosp 2+ Pre {pfx}": st.column_config.NumberColumn(f"Hosp 2+ Pre {pfx}", help=f"Patients with 2+ hospitalizations ({wd}d non-Vitaline)"),
+            f"Hosp 2+ Post {pfx}": st.column_config.NumberColumn(f"Hosp 2+ Post {pfx}", help=f"Patients with 2+ hospitalizations ({wd}d Vitaline)"),
+        })
+    return cfg
+
+
+fac_table = _build_review_table(fac)
+
+st.dataframe(fac_table, column_config=_column_config(include_facility=True),
+             use_container_width=True, hide_index=True, height=600)
 st.markdown("---")
 
-# ── SECTION 9: DISTRIBUTIONS ────────────────────────────────────────────────
+# ── SECTION 9: COMPANY TABLE ────────────────────────────────────────────────
 
-st.header("9. KPI Distribution Across Facilities")
+st.header("9. All KPIs by Company")
+st.markdown("Same analysis aggregated at the company level.")
+
+company_groups = fac.groupby("Company")
+company_rows = []
+for company, grp in company_groups:
+    agg = {"Facility": "", "Company": company}
+    for col in fac.columns:
+        if col in ("Facility", "Company"):
+            continue
+        vals = grp[col].dropna()
+        if "Rate" in col or "%" in col:
+            continue
+        agg[col] = vals.sum()
+
+    ne = agg.get("Eligible Patients", 0)
+    k1d = agg.get("KPI1 Denom", 0)
+    k2d = agg.get("KPI2 Denom", 0)
+    agg["KPI1 Rate"] = agg.get("KPI1 Num", 0) / k1d if k1d > 0 else None
+    agg["KPI2 Rate"] = agg.get("KPI2 Num", 0) / k2d if k2d > 0 else None
+    for wd in (90, 120):
+        for k in (f"KPI3 Pre >=1 fall {wd}d %", f"KPI3 Post >=1 fall {wd}d %",
+                  f"KPI3 Pre 2+ falls {wd}d %", f"KPI3 Post 2+ falls {wd}d %",
+                  f"KPI4 Pre >=1 hosp {wd}d %", f"KPI4 Post >=1 hosp {wd}d %",
+                  f"KPI4 Pre >=2 hosp {wd}d %", f"KPI4 Post >=2 hosp {wd}d %"):
+            num_col = k.replace(" %", "")
+            agg[k] = agg.get(num_col, 0) / ne if ne > 0 else None
+
+    company_rows.append(pd.Series(agg))
+
+company_df = pd.DataFrame(company_rows)
+company_table = _build_review_table(company_df)
+company_table = company_table.drop(columns=["Facility"], errors="ignore")
+
+st.dataframe(company_table, column_config=_column_config(include_facility=False),
+             use_container_width=True, hide_index=True, height=300)
+st.markdown("---")
+
+# ── SECTION 10: DISTRIBUTIONS ───────────────────────────────────────────────
+
+st.header("10. KPI Distribution Across Facilities")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Falls Major Injury (KPI 1)", "Fall Prevalence (KPI 2)",
